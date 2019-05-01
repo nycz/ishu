@@ -1,3 +1,4 @@
+#!/usr/bin/env python3
 import argparse
 from contextlib import contextmanager
 from datetime import datetime
@@ -33,8 +34,6 @@ def load_issues(user: Optional[str] = None) -> List['Issue']:
             issues.extend(Issue.load(p) for p in sorted(userdir.iterdir()))
     return issues
 
-
-# == Data structures ==
 
 # == Commands ==
 
@@ -428,7 +427,7 @@ def parse_commands(config: Config) -> None:
 def parse_commands_not_initialized() -> None:
     desc = (f'{C_RED}You have not set you username in the config, '
             f'which you need before you can use the rest of the program.'
-            f'Run `ishu conf --user USER` to set it.{C_RESET}')
+            f'Run `ishu conf --set user USER` to set it.{C_RESET}')
     parser = argparse.ArgumentParser(description=desc)
     parser.set_defaults(func=None)
     subparsers = parser.add_subparsers(dest='cmd')
@@ -439,16 +438,20 @@ def parse_commands_not_initialized() -> None:
     add_conf_parser_options(conf_parser)
     # Parser everything
     args = parser.parse_args()
-    if args.help or args.func is None:
+    if args.func is None:
         parser.print_help()
     else:
         args.func(None, args)
 
 
-if __name__ == '__main__':
+def main() -> None:
     try:
         config = Config.load()
     except (FileNotFoundError, IncompleteConfigException):
         parse_commands_not_initialized()
     else:
         parse_commands(config)
+
+
+if __name__ == '__main__':
+    main()
