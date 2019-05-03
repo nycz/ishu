@@ -412,16 +412,16 @@ def parse_commands(config: Config) -> None:
         sysargs = sysargs[:1]
     elif sysargs and sysargs[0] not in valid_subcommands:
         parser.error(f'{sysargs[0]} is not a valid command')
+        return
+    args = parser.parse_args(args=sysargs)
+    if args.func is None:
+        show_help()
     else:
-        args = parser.parse_args(args=sysargs)
-        if args.func is None:
-            show_help()
+        if not ROOT.exists() and args.func != cmd_init:
+            print(f'{C_RED}No ishu directory found! '
+                  f'Run `ishu init` to create one.{C_RESET}')
         else:
-            if not ROOT.exists() and args.func != cmd_init:
-                print(f'{C_RED}No ishu directory found! '
-                      f'Run `ishu init` to create one.{C_RESET}')
-            else:
-                args.func(config, args)
+            args.func(config, args)
 
 
 def parse_commands_not_initialized() -> None:
