@@ -631,7 +631,11 @@ def parse_commands_new() -> None:
                 else:
                     cmd_configure(None, args)
             else:
-                func(config, args)
+                if not ROOT.exists() and func != cmd_init:
+                    error('no .ishu directory found! '
+                          'Please run the init command first.')
+                else:
+                    func(config, args)
 
 
 def main() -> None:
