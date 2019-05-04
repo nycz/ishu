@@ -226,38 +226,6 @@ def cmd_open(config: Config, args: List[str]) -> None:
     print(f'Issue #{issue.id_.num} opened')
 
 
-def _change_status(user: str, issue_id: IssueID,
-                   target_status: IssueStatus,
-                   status_text: str, result_text: str,
-                   comment_text: Optional[str] = None) -> None:
-    issue = Issue.load_from_id(issue_id)
-    if issue.status == target_status:
-        print(f'Issue is already {status_text}')
-    else:
-        issue._replace(status=target_status).save()
-        if comment_text:
-            Comment(issue_id=issue_id, user=user, created=datetime.now(),
-                    message=comment_text).save()
-        print(f'Issue {issue_id.num} {result_text}')
-
-
-help_reopen: CommandHelp = (
-    'reopen a closed issue',
-    '<id>',
-    []
-)
-
-
-def cmd_reopen(config: Config, args: List[str]) -> None:
-    # Args
-    issue_id: IssueID
-    # Parse args
-    issue_id = _arg_issue_id(args, config)
-    # Run command
-    _change_status(config.user, issue_id, IssueStatus.OPEN,
-                   'open', 'reopened')
-
-
 help_edit: CommandHelp = (
     'edit an issue',
     '<id> [-d <description>] [-t <tag>...] [-T <tag>...]',
@@ -309,6 +277,38 @@ def cmd_edit(config: Config, args: List[str]) -> None:
         print('Issue edited')
     else:
         print('Nothing to update')
+
+
+def _change_status(user: str, issue_id: IssueID,
+                   target_status: IssueStatus,
+                   status_text: str, result_text: str,
+                   comment_text: Optional[str] = None) -> None:
+    issue = Issue.load_from_id(issue_id)
+    if issue.status == target_status:
+        print(f'Issue is already {status_text}')
+    else:
+        issue._replace(status=target_status).save()
+        if comment_text:
+            Comment(issue_id=issue_id, user=user, created=datetime.now(),
+                    message=comment_text).save()
+        print(f'Issue {issue_id.num} {result_text}')
+
+
+help_reopen: CommandHelp = (
+    'reopen a closed issue',
+    '<id>',
+    []
+)
+
+
+def cmd_reopen(config: Config, args: List[str]) -> None:
+    # Args
+    issue_id: IssueID
+    # Parse args
+    issue_id = _arg_issue_id(args, config)
+    # Run command
+    _change_status(config.user, issue_id, IssueStatus.OPEN,
+                   'open', 'reopened')
 
 
 help_fixed: CommandHelp = (
