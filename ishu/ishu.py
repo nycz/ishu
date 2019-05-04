@@ -1,13 +1,16 @@
 #!/usr/bin/env python3
+from collections import Counter
 from datetime import datetime
 from itertools import chain
+import json
+from operator import itemgetter
 from pathlib import Path
 import sys
 from typing import List, Optional, Set, Tuple
 
-from .common import (C_RED, C_RESET, Config, format_table,
+from .common import (C_RED, C_RESET, clean_esc, Config, format_table,
                      IncompleteConfigException,
-                     InvalidConfigException, ROOT)
+                     InvalidConfigException, ROOT, TAGS_PATH)
 from .models import Comment, Issue, IssueID, IssueStatus, load_issues
 
 
@@ -531,13 +534,145 @@ def cmd_log(config: Config, args: List[str]) -> None:
 
 help_tag: CommandHelp = (
     'handle registered tags in this ishu project',
-    '',
-    []
+    '(-l [-u]| -a <tag>... | -r <tag>... | -e <oldtag> <newtag>)',
+    [
+        ('-l/--list', 'list registered tags'),
+        ('-u/--usage', 'sort tag list by usage'),
+        ('-a/--add <tag>...', 'register new tags'),
+        ('-r/--remove <tag>...', 'unregister and remove tags from all issues'),
+        ('-e/--edit <oldtag> <newtag>',
+         'rename a tag both in the registry and in all issues using it')
+    ]
 )
 
 
 def cmd_tag(config: Config, args: List[str]) -> None:
-    print('TODO')
+    # Args
+    list_tags = False
+    sort_by_usage = False
+    add_tags: Optional[Set[str]] = None
+    remove_tags: Optional[Set[str]] = None
+    edit_tag: Optional[Tuple[str, str]] = None
+
+    # Parse args
+    if not args:
+        list_tags = True
+    else:
+        arg = args.pop(0)
+        _arg_disallow_positional(arg)
+        if arg == '-lu':
+            list_tags = True
+            sort_by_usage = True
+        elif arg in {'-l', '--list'}:
+            list_tags = True
+            if args and args[0] in {'-u', '--usage'}:
+                args.pop(0)
+                sort_by_usage = True
+        elif arg in {'-a', '--add'}:
+            add_tags = _arg_tags(args, '--add')
+        elif arg in {'-r', '--remove'}:
+            remove_tags = _arg_tags(args, '--remove')
+        elif arg in {'-e', '--edit'}:
+            edit_tag = (_arg_positional(args, 'old tag'),
+                        _arg_positional(args, 'new tag'))
+        else:
+            _arg_unknown_optional(arg)
+    _arg_disallow_trailing(args)
+
+    # Run command
+    tag_registry: Set[str]
+    if not TAGS_PATH.exists():
+        TAGS_PATH.write_text('[]')
+        tag_registry = set()
+    else:
+        tag_registry = set(json.loads(TAGS_PATH.read_text()))
+    old_tag_registry = frozenset(tag_registry)
+    issues = load_issues()
+    if list_tags:
+        issue_tags = Counter(t for issue in issues for t in issue.tags)
+        issue_tags.update({t: 0 for t in tag_registry if t not in issue_tags})
+        tag_list = [(name, str(count))
+                    for name, count in sorted(sorted(issue_tags.most_common()),
+                                              key=itemgetter(1), reverse=True)]
+        if not sort_by_usage:
+            tag_list.sort()
+        unregistered_lines = {n: (C_RED, C_RESET)
+                              for n, (name, _) in enumerate(tag_list)
+                              if name not in tag_registry}
+        if tag_list:
+            print('\n'.join(format_table(tag_list,
+                                         titles=('Tag name', 'Use count'),
+                                         surround_rows=unregistered_lines)))
+        unregistered_tags = set(issue_tags.keys()) - tag_registry
+        if unregistered_tags:
+            print(f'\n{C_RED}{len(unregistered_tags)} '
+                  f'unregistered tags!{C_RESET}')
+    elif add_tags:
+        existing_tags = add_tags.intersection(tag_registry)
+        new_tags = add_tags - tag_registry
+        if existing_tags:
+            print('Existing tags that weren\'t added:',
+                  ', '.join(sorted(existing_tags)))
+        if new_tags:
+            print('Added tags:', ', '.join(sorted(new_tags)))
+            tag_registry.update(add_tags)
+    elif remove_tags:
+        matched_tags = remove_tags.intersection(tag_registry)
+        unknown_tags = remove_tags - tag_registry
+        # TODO: remove/add unregistered tags?
+        if unknown_tags:
+            print('Unknown tags that weren\'t removed:',
+                  ', '.join(sorted(unknown_tags)))
+        if matched_tags:
+            print('Tags to remove:', ', '.join(sorted(matched_tags)))
+            for tag in matched_tags:
+                matched_issues = [i for i in issues if tag in i.tags]
+                if matched_issues:
+                    response = input(f'Tag {tag!r} is used in '
+                                     f'{len(matched_issues)} issues. '
+                                     f'Remove it from all of them? [y/N] ')
+                    if response.lower() not in {'y', 'yes'}:
+                        print('Aborted tag removal, nothing was changed.')
+                        break
+            else:
+                tag_registry.difference_update(matched_tags)
+                count = 0
+                for issue in issues:
+                    if matched_tags.intersection(issue.tags):
+                        issue.tags.difference_update(matched_tags)
+                        issue.save()
+                        count += 1
+                print(f'Tags removed, {count} issues were modified.')
+    elif edit_tag:
+        old_name, new_name = edit_tag
+        if old_name == new_name:
+            error('old name and new name are identical')
+        if old_name not in tag_registry:
+            error(f'unknown tag: {old_name}')
+        if new_name in tag_registry:
+            error(f'new tag already exist: {new_name}')
+        matched_issues = [i for i in issues if old_name in i.tags]
+        if matched_issues:
+            response = input(f'Tag {old_name!r} is used in '
+                             f'{len(matched_issues)} issues. '
+                             f'Rename it to {new_name!r} '
+                             f'in all of them? [y/N] ')
+            if response.lower() not in {'y', 'yes'}:
+                print('Aborted tag edit, nothing was changed.')
+                return
+            else:
+                for issue in matched_issues:
+                    issue.tags.remove(old_name)
+                    issue.tags.add(new_name)
+                    issue.save()
+        tag_registry.remove(old_name)
+        tag_registry.add(new_name)
+        print(f'Tag {old_name!r} renamed to {new_name!r}.')
+        if matched_issues:
+            print(f'{len(matched_issues)} issues were modified.')
+    # Save changes if needed
+    if tag_registry != old_tag_registry:
+        TAGS_PATH.write_text(json.dumps(sorted(tag_registry), indent=2))
 
 
 # == Command line parsing ==
