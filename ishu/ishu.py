@@ -224,7 +224,12 @@ def cmd_open(config: Config, args: List[str]) -> None:
                   tags=(tags or set()),
                   blocked_by=(blocked_by or set()),
                   comments=[],
-                  status=IssueStatus.OPEN)
+                  status=IssueStatus.OPEN,
+                  log=[],
+                  original_description=description,
+                  original_tags=frozenset(tags or set()),
+                  original_blocked_by=frozenset(blocked_by or set()),
+                  original_status=IssueStatus.OPEN)
     issue.save()
     print(f'Issue #{issue.id_.num} opened')
 
