@@ -4,7 +4,8 @@ import json
 from pathlib import Path
 import re
 import textwrap
-from typing import Any, Dict, List, NamedTuple, Optional, Set
+from typing import (Any, FrozenSet, Dict, Iterable, List, NamedTuple,
+                    Optional, Set, Tuple)
 
 from .common import (Config, format_table, issue_path, ISSUE_FNAME,
                      TIMESTAMP_FMT, user_path, user_paths, usernames)
@@ -119,6 +120,11 @@ class Issue(NamedTuple):
     blocked_by: Set[IssueID]
     comments: List[Comment]
     status: IssueStatus
+    log: List[Dict[str, Any]]
+    original_description: str
+    original_tags: FrozenSet[str]
+    original_blocked_by: FrozenSet[IssueID]
+    original_status: IssueStatus
 
     def info(self, config: Config) -> str:
         blocking_issues = [issue.id_ for issue in load_issues()
@@ -155,17 +161,41 @@ class Issue(NamedTuple):
         data: Dict[str, Any] = json.loads((path / ISSUE_FNAME).read_text())
         comments = sorted((Comment.load(p) for p in path.glob('comment-*')),
                           key=lambda x: x.created)
+        blocked_by = {IssueID(num=i['id'], user=i['user'])
+                      for i in data['blocked_by']}
         return cls(id_=IssueID(num=data['id'], user=data['user']),
                    created=datetime.strptime(data['created'], TIMESTAMP_FMT),
                    updated=datetime.strptime(data['updated'], TIMESTAMP_FMT),
                    description=data['description'],
                    tags=set(data['tags']),
-                   blocked_by={IssueID(num=i['id'], user=i['user'])
-                               for i in data['blocked_by']},
+                   blocked_by=blocked_by,
                    comments=comments,
-                   status=IssueStatus(data['status']))
+                   status=IssueStatus(data['status']),
+                   # Backups for log diffs
+                   log=data.get('log', []),
+                   original_description=data['description'],
+                   original_tags=frozenset(data['tags']),
+                   original_blocked_by=frozenset(blocked_by),
+                   original_status=IssueStatus(data['status']))
 
     def save(self) -> None:
+        def encode_blocks(blocks: Iterable[IssueID]
+                          ) -> List[Dict[str, Any]]:
+            return sorted(({'id': b.num, 'user': b.user} for b in blocks),
+                          key=lambda x: x['id'])
+        now = datetime.now().strftime(TIMESTAMP_FMT)
+        log_diff: Dict[str, Any] = {}
+        if self.description != self.original_description:
+            log_diff['description'] = self.original_description
+        if self.tags != self.original_tags:
+            log_diff['tags'] = sorted(self.original_tags)
+        if self.blocked_by != self.original_blocked_by:
+            log_diff['blocked_by'] = encode_blocks(self.original_blocked_by)
+        if self.status != self.original_status:
+            log_diff['status'] = self.original_status.value
+        if log_diff:
+            log_diff['timestamp'] = now
+            self.log.append(log_diff)
         path = issue_path(*self.id_)
         if not path.parent.exists():
             path.parent.mkdir(parents=True, exist_ok=True)
@@ -173,13 +203,12 @@ class Issue(NamedTuple):
             'id': self.id_.num,
             'user': self.id_.user,
             'created': self.created.strftime(TIMESTAMP_FMT),
-            'updated': datetime.now().strftime(TIMESTAMP_FMT),
+            'updated': now,
             'description': self.description,
             'tags': sorted(self.tags),
-            'blocked_by': sorted(({'id': b.num, 'user': b.user}
-                                  for b in self.blocked_by),
-                                 key=lambda x: x['id']),
-            'status': self.status.value
+            'blocked_by': encode_blocks(self.blocked_by),
+            'status': self.status.value,
+            'log': self.log
         }, indent=2))
 
 
