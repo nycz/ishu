@@ -8,7 +8,7 @@ from pathlib import Path
 import sys
 from typing import List, Optional, Set, Tuple
 
-from .common import (C_RED, C_RESET, clean_esc, Config, format_table,
+from .common import (C_RED, C_RESET, Config, format_table,
                      IncompleteConfigException,
                      InvalidConfigException, ROOT, TAGS_PATH)
 from .models import Comment, Issue, IssueID, IssueStatus, load_issues
@@ -509,9 +509,12 @@ def cmd_list(config: Config, args: List[str]) -> None:
     # Run command
     all_issues = load_issues()
     issues: List[Issue] = []
+    is_blocking = set()
     for issue in all_issues:
         blocking_issues = [i for i in all_issues
                            if i.id_ != issue.id_ and issue.id_ in i.blocked_by]
+        if blocking_issues:
+            is_blocking.add(issue.id_)
         if tags and not tags.issubset(issue.tags):
             continue
         if without_tags and without_tags.intersection(issue.tags):
@@ -532,12 +535,14 @@ def cmd_list(config: Config, args: List[str]) -> None:
 
     date_fmt = '%Y-%m-%d %H:%M'
 
-    titles = ('ID', 'User', 'Status', 'Created', 'Updated',
+    titles = ('ID', 'User', 'Status', 'Blocks', 'Created', 'Updated',
               'Comments', 'Description')
     table = [
         (str(i.id_.num),
          i.id_.user,
          i.status.value.capitalize(),
+         (('b' if i.blocked_by else '')
+          + ('B' if i.id_ in is_blocking else '')),
          i.created.strftime(date_fmt),
          (i.updated.strftime(date_fmt) if i.updated > i.created else ''),
          str(len(i.comments)),
