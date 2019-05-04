@@ -4,10 +4,10 @@ import json
 from pathlib import Path
 import re
 import textwrap
-from typing import Any, Dict, List, NamedTuple, Set
+from typing import Any, Dict, List, NamedTuple, Optional, Set
 
 from .common import (Config, format_table, issue_path, ISSUE_FNAME,
-                     TIMESTAMP_FMT, usernames)
+                     TIMESTAMP_FMT, user_path, user_paths, usernames)
 
 
 class IssueID(NamedTuple):
@@ -121,6 +121,8 @@ class Issue(NamedTuple):
     status: IssueStatus
 
     def info(self, config: Config) -> str:
+        blocking_issues = [issue.id_ for issue in load_issues()
+                           if self.id_ in issue.blocked_by]
         table = [
             ('ID', str(self.id_.num)),
             ('User', self.id_.user),
@@ -131,6 +133,8 @@ class Issue(NamedTuple):
             ('Tags', ', '.join(self.tags)),
             ('Blocked by', ', '.join(i.shorten(config)
                                      for i in self.blocked_by)),
+            ('Blocking', ', '.join(i.shorten(config)
+                                   for i in blocking_issues)),
             ('Description', self.description),
         ]
         info = '\n'.join(format_table(table, wrap_columns={1},
@@ -169,7 +173,7 @@ class Issue(NamedTuple):
             'id': self.id_.num,
             'user': self.id_.user,
             'created': self.created.strftime(TIMESTAMP_FMT),
-            'updated': self.updated.strftime(TIMESTAMP_FMT),
+            'updated': datetime.now().strftime(TIMESTAMP_FMT),
             'description': self.description,
             'tags': sorted(self.tags),
             'blocked_by': sorted(({'id': b.num, 'user': b.user}
@@ -177,3 +181,18 @@ class Issue(NamedTuple):
                                  key=lambda x: x['id']),
             'status': self.status.value
         }, indent=2))
+
+
+def load_issues(user: Optional[str] = None) -> List['Issue']:
+    issues: List['Issue'] = []
+    if user:
+        try:
+            issues = [Issue.load(p) for p
+                      in sorted(user_path(user).iterdir())]
+        except FileNotFoundError:
+            # TODO: maybe do something special for a user that doesn't exist?
+            pass
+    else:
+        for userdir in user_paths():
+            issues.extend(Issue.load(p) for p in sorted(userdir.iterdir()))
+    return issues

@@ -7,23 +7,8 @@ from typing import List, Optional, Set, Tuple
 
 from .common import (C_RED, C_RESET, Config, format_table,
                      IncompleteConfigException,
-                     InvalidConfigException, ROOT, user_path, user_paths)
-from .models import Comment, Issue, IssueID, IssueStatus
-
-
-def load_issues(user: Optional[str] = None) -> List['Issue']:
-    issues: List['Issue'] = []
-    if user:
-        try:
-            issues = [Issue.load(p) for p
-                      in sorted(user_path(user).iterdir())]
-        except FileNotFoundError:
-            # TODO: maybe do something special for a user that doesn't exist?
-            pass
-    else:
-        for userdir in user_paths():
-            issues.extend(Issue.load(p) for p in sorted(userdir.iterdir()))
-    return issues
+                     InvalidConfigException, ROOT)
+from .models import Comment, Issue, IssueID, IssueStatus, load_issues
 
 
 def error(message: str) -> None:
