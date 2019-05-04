@@ -379,14 +379,19 @@ def cmd_blocked_by(config: Config, args: List[str]) -> None:
 
     # Run command
     issue = Issue.load_from_id(blocked_id)
+    other_issue = Issue.load_from_id(blocking_id)
+    s_blocked_id = f'#{blocked_id.shorten(config)}'
+    s_blocking_id = f'#{blocking_id.shorten(config)}'
     if blocking_id in issue.blocked_by:
-        print(f'Issue #{blocked_id.shorten(config)} is already '
-              f'blocked by #{blocking_id.shorten(config)}')
+        print(f'Issue {s_blocked_id} is already blocked by {s_blocking_id}, '
+              f'no changes were made.')
+    elif blocked_id in other_issue.blocked_by:
+        error(f'blocking loop detected! Issue {s_blocking_id} is already '
+              f'blocked by {s_blocked_id}!')
     else:
         issue.blocked_by.add(blocking_id)
         issue.save()
-        print(f'Issue #{blocked_id.shorten(config)} marked as '
-              f'blocked by #{blocking_id.shorten(config)}')
+        print(f'Issue {s_blocked_id} marked as blocked by {s_blocking_id}.')
 
 
 help_unblock: CommandHelp = (
@@ -397,7 +402,29 @@ help_unblock: CommandHelp = (
 
 
 def cmd_unblock(config: Config, args: List[str]) -> None:
-    print('TODO')
+    # Args
+    blocked_id: IssueID
+    blocking_id: IssueID
+
+    # Parse args
+    blocked_id = _arg_issue_id(args, config, restrict_to_own=True)
+    blocking_id = _arg_issue_id(args, config)
+    _arg_disallow_trailing(args)
+    if blocked_id == blocking_id:
+        error("an issue can't block itself")
+
+    # Run command
+    issue = Issue.load_from_id(blocked_id)
+    s_blocked_id = f'#{blocked_id.shorten(config)}'
+    s_blocking_id = f'#{blocking_id.shorten(config)}'
+    if blocking_id not in issue.blocked_by:
+        print(f'Issue {s_blocked_id} is not blocked by {s_blocking_id}, '
+              f'no changes were made.')
+    else:
+        issue.blocked_by.remove(blocking_id)
+        issue.save()
+        print(f'Issue #{blocked_id.shorten(config)} no longer marked as '
+              f'blocked by #{blocking_id.shorten(config)}.')
 
 
 help_comment: CommandHelp = (
