@@ -499,13 +499,18 @@ def cmd_list(config: Config, args: List[str]) -> None:
             elif status != IssueStatus.CLOSED and status != issue.status:
                 continue
         issues.append(issue)
-    titles = ('ID', 'User', 'Status', 'Created', 'Updated', 'Description')
+
+    date_fmt = '%Y-%m-%d %H:%M'
+
+    titles = ('ID', 'User', 'Status', 'Created', 'Updated',
+              'Comments', 'Description')
     table = [
         (str(i.id_.num),
          i.id_.user,
          i.status.value.capitalize(),
-         i.created.strftime('%Y-%m-%d'),
-         (i.updated.strftime('%Y-%m-%d') if i.updated > i.created else ''),
+         i.created.strftime(date_fmt),
+         (i.updated.strftime(date_fmt) if i.updated > i.created else ''),
+         str(len(i.comments)),
          i.description)
         for i in issues
     ]
