@@ -1,23 +1,14 @@
 #!/usr/bin/env python3
-import argparse
-from contextlib import contextmanager
 from datetime import datetime
 from itertools import chain
+from pathlib import Path
 import sys
-from typing import (Callable, Dict, Iterable, Iterator,
-                    List, NamedTuple, Optional, Set, Union)
+from typing import List, Optional, Set, Tuple
 
 from .common import (C_RED, C_RESET, Config, format_table,
                      IncompleteConfigException,
                      InvalidConfigException, ROOT, user_path, user_paths)
 from .models import Comment, Issue, IssueID, IssueStatus
-
-# TODO: unify output better, cause right now we've got:
-#   - argparse messages/errors
-#   - regular print info
-#   - regular print but as errors
-# maybe use stderr for errors, or dump everything in argparse?
-# prolly not logging tho since that isn't really meant for a cli
 
 
 def load_issues(user: Optional[str] = None) -> List['Issue']:
@@ -35,9 +26,74 @@ def load_issues(user: Optional[str] = None) -> List['Issue']:
     return issues
 
 
+def error(message: str) -> None:
+    sys.exit(f'{C_RED}Error:{C_RESET} {message}')
+
+
+# == Command parsing helpers ==
+
+def _arg_issue_id(args: List[str], config: Config,
+                  specify_id: bool = False,
+                  restrict_to_own: bool = False) -> IssueID:
+    try:
+        raw_issue_id = args.pop(0)
+    except IndexError:
+        error('issue ID required')
+    try:
+        issue_id = IssueID.load(config, raw_issue_id,
+                                restrict_to_own=restrict_to_own)
+    except Exception as e:
+        if specify_id:
+            error(f'failed to parse issue ID {raw_issue_id}: {e}')
+        else:
+            error(str(e))
+    return issue_id
+
+
+def _arg_tags(args: List[str], option_name: str) -> Set[str]:
+    tags = set()
+    while args and not args[0].startswith('-'):
+        tags.add(args.pop(0))
+    if not tags:
+        error(f'no tags specified for {option_name}')
+    return tags
+
+
+def _arg_positional(args: List[str], option_name: str,
+                    position: int = 0) -> str:
+    if not args:
+        error(f'no {option_name} provided')
+    return args.pop(position)
+
+
+def _arg_disallow_trailing(args: List[str]) -> None:
+    if args:
+        error(f'unknown trailing arguments: {", ".join(map(repr, args))}')
+
+
+def _arg_disallow_positional(arg: str) -> None:
+    if not arg.startswith('-'):
+        error(f'unknown positional argument: {arg}')
+
+
+def _arg_unknown_optional(arg: str) -> None:
+    error(f'unknown argument: {arg}')
+
+
 # == Commands ==
 
-def cmd_init(config: Config, args: argparse.Namespace) -> None:
+CommandHelp = Tuple[str, str, List[Tuple[str, str]]]
+
+
+help_init: CommandHelp = (
+    'initialize an ishu directory',
+    '',
+    []
+)
+
+
+def cmd_init(config: Config, args: List[str]) -> None:
+    _arg_disallow_trailing(args)
     if ROOT.exists():
         print(f'There is already an ishu project in {ROOT}')
     else:
@@ -45,29 +101,66 @@ def cmd_init(config: Config, args: argparse.Namespace) -> None:
         print(f'Created ishu project in {ROOT}')
 
 
-def cmd_configure(config: Optional[Config], args: argparse.Namespace) -> None:
-    no_conf_help = ('No valid config found, please '
-                    'run `ishu conf --set user USER`')
+help_configure: CommandHelp = (
+    'view and edit settings',
+    '(-l | -g <key> | -s <key> <value> )',
+    [
+        ('-l/--list', 'list settings'),
+        ('-g/--get <key>', 'show the value of a setting'),
+        ('-s/--set <key> <value>', 'set the value of a setting')
+    ]
+)
+
+
+def cmd_configure(config: Optional[Config], args: List[str]) -> None:
+    no_conf_help = (f'{C_RED}No valid config found, '
+                    f'please set your username{C_RESET}')
+    # Args
+    list_settings = False
+    get_setting: Optional[str] = None
+    set_setting: Optional[Tuple[str, str]] = None
+    # Parse args
+    if not args:
+        list_settings = True
+    else:
+        arg = args.pop(0)
+        _arg_disallow_positional(arg)
+        if arg in {'-l', '--list'}:
+            list_settings = True
+        elif arg in {'-g', '--get'}:
+            try:
+                get_setting = args.pop(0)
+            except IndexError:
+                error('--get needs an argument')
+        elif arg in {'-s', '--set'}:
+            try:
+                set_setting = (args.pop(0), args.pop(0))
+            except IndexError:
+                error('--set needs two arguments')
+        else:
+            _arg_unknown_optional(arg)
+    _arg_disallow_trailing(args)
     # List settings
-    if args.list_settings:
+    if list_settings:
         if config is None:
             print(no_conf_help)
-            return
+        print('Settings:')
         for key in sorted(Config.settings):
-            print(f'{key} = {config[key]}')
+            print(f'  {key} = {config[key] if config else ""}')
     # Get settings
-    elif args.get_setting:
+    elif get_setting:
         if config is None:
             print(no_conf_help)
-            return
-        key = args.get_setting
-        print(f'{key} = {config.user}')
+            error("can't get setting when there is no config")
+        elif get_setting not in Config.settings:
+            error(f'unknown setting: {get_setting}')
+        else:
+            print(f'{get_setting} = {config[get_setting]}')
     # Set settings
-    elif args.set_setting:
-        key, value = args.set_setting
+    elif set_setting:
+        key, value = set_setting
         if key not in Config.settings:
-            print(f'Invalid config key: {key!r}')
-            return
+            error(f'unknown setting: {key}')
         try:
             updated_config: Config
             if config is None:
@@ -76,33 +169,74 @@ def cmd_configure(config: Optional[Config], args: argparse.Namespace) -> None:
                 config[key] = value
                 updated_config = config
         except InvalidConfigException as e:
-            print('Error in config value: {e}')
+            print(f'error in config value: {e!r}')
         else:
             print(f'{key} -> {value}')
             updated_config.save()
             print('Config saved')
-    else:
-        print('Nothing to do, run with --help to see available options')
 
 
-def cmd_info(config: Config, args: argparse.Namespace) -> None:
-    issue = Issue.load_from_id(args.issue_id)
+help_info: CommandHelp = (
+    'show info about an issue',
+    '<id>',
+    []
+)
+
+
+def cmd_info(config: Config, args: List[str]) -> None:
+    # Args
+    issue_id: IssueID
+    # Parse args
+    issue_id = _arg_issue_id(args, config)
+    _arg_disallow_trailing(args)
+    # Run command
+    issue = Issue.load_from_id(issue_id)
     print(issue.info(config))
 
 
-def cmd_open(config: Config, args: argparse.Namespace) -> None:
+help_open: CommandHelp = (
+    'open a new issue',
+    '[-t <tag>...] [-b <id>...] <description>',
+    [
+        ('-t/--tags <tag>...', 'add tags to the issue'),
+        ('-b/--blocked-by <id>...',
+         'mark the new issue as blocked by other issues')
+    ]
+)
+
+
+def cmd_open(config: Config, args: List[str]) -> None:
+    # Args
+    tags: Optional[Set[str]] = None
+    blocked_by: Optional[Set[IssueID]] = None
+    description: str
+
+    # Parse args
+    description = _arg_positional(args, 'description', position=-1)
+    while args:
+        arg = args.pop(0)
+        _arg_disallow_positional(arg)
+        if arg in {'-t', '--tags'}:
+            tags = _arg_tags(args, '--tags')
+        elif arg in {'-b', '--blocked-by'}:
+            blocked_by = set()
+            while args and not arg[0].startswith('-'):
+                blocked_by.add(_arg_issue_id(args, config, specify_id=True))
+        else:
+            _arg_unknown_optional(arg)
+
+    # Run command
     issues = load_issues(user=config.user)
     new_id_num = max(chain((i.id_.num for i in issues), [0]))
     now = datetime.utcnow()
     issue = Issue(id_=IssueID(num=new_id_num + 1, user=config.user),
                   created=now,
                   updated=now,
-                  description=args.description,
-                  tags=(args.tags or set()),
-                  blocked_by=(args.blocked_by or set()),
+                  description=description,
+                  tags=(tags or set()),
+                  blocked_by=(blocked_by or set()),
                   comments=[],
                   status=IssueStatus.OPEN)
-    print(repr(issue.blocked_by))
     issue.save()
     print(f'Issue #{issue.id_.num} opened')
 
@@ -122,22 +256,68 @@ def _change_status(user: str, issue_id: IssueID,
         print(f'Issue {issue_id.num} {result_text}')
 
 
-def cmd_reopen(config: Config, args: argparse.Namespace) -> None:
-    _change_status(config.user, args.issue_id, IssueStatus.OPEN,
+help_reopen: CommandHelp = (
+    'reopen a closed issue',
+    '<id>',
+    []
+)
+
+
+def cmd_reopen(config: Config, args: List[str]) -> None:
+    # Args
+    issue_id: IssueID
+    # Parse args
+    issue_id = _arg_issue_id(args, config)
+    # Run command
+    _change_status(config.user, issue_id, IssueStatus.OPEN,
                    'open', 'reopened')
 
 
-def cmd_edit(config: Config, args: argparse.Namespace) -> None:
-    issue = Issue.load_from_id(args.issue_id)
+help_edit: CommandHelp = (
+    'edit an issue',
+    '<id> [-d <description>] [-t <tag>...] [-T <tag>...]',
+    [
+        ('-d/--description <description>', 'set the description'),
+        ('-t/--add-tags <tag>...', 'add tags to the issue'),
+        ('-T/--remove-tags <tag>...', 'remove tags from the issue')
+    ]
+)
+
+
+def cmd_edit(config: Config, args: List[str]) -> None:
+    # Args
+    issue_id: IssueID
+    description: Optional[str] = None
+    add_tags: Optional[Set[str]] = None
+    remove_tags: Optional[Set[str]] = None
+    # Parse args
+    issue_id = _arg_issue_id(args, config)
+    while args:
+        arg = args.pop(0)
+        if not arg.startswith('-'):
+            error(f'unknown positional argument: {arg}')
+        elif arg in {'-d', '--description'}:
+            try:
+                description = args.pop(0)
+            except IndexError:
+                error('no description provided')
+        elif arg in {'-t', '--add-tags'}:
+            add_tags = _arg_tags(args, '--add-tags')
+        elif arg in {'-T', '--remove-tags'}:
+            remove_tags = _arg_tags(args, '--remove-tags')
+        else:
+            error(f'unknown argument: {arg}')
+    # Run command
+    issue = Issue.load_from_id(issue_id)
     changed = False
-    if args.desc and args.desc != issue.description:
-        issue = issue._replace(description=args.desc)
+    if description and description != issue.description:
+        issue = issue._replace(description=description)
         changed = True
-    if args.add_tags and not args.add_tags.issubset(issue.tags):
-        issue.tags.update(args.add_tags)
+    if add_tags and not add_tags.issubset(issue.tags):
+        issue.tags.update(add_tags)
         changed = True
-    if args.remove_tags and args.remove_tags.intersection(issue.tags):
-        issue.tags.difference_update(args.remove_tags)
+    if remove_tags and remove_tags.intersection(issue.tags):
+        issue.tags.difference_update(remove_tags)
         changed = True
     if changed:
         issue.save()
@@ -146,60 +326,188 @@ def cmd_edit(config: Config, args: argparse.Namespace) -> None:
         print('Nothing to update')
 
 
-def cmd_fixed(config: Config, args: argparse.Namespace) -> None:
-    _change_status(config.user, args.issue_id, IssueStatus.FIXED,
+help_fixed: CommandHelp = (
+    'close an issue and mark it as fixed',
+    '<id> [<comment>]',
+    []
+)
+
+
+def cmd_fixed(config: Config, args: List[str]) -> None:
+    # Args
+    issue_id: IssueID
+    comment: Optional[str] = None
+    # Parse args
+    issue_id = _arg_issue_id(args, config)
+    if args:
+        comment = args.pop(0)
+    _arg_disallow_trailing(args)
+    # Run command
+    _change_status(config.user, issue_id, IssueStatus.FIXED,
                    'marked as fixed', 'closed and marked as fixed',
-                   comment_text=args.comment)
+                   comment_text=comment)
 
 
-def cmd_wontfix(config: Config, args: argparse.Namespace) -> None:
-    _change_status(config.user, args.issue_id, IssueStatus.WONTFIX,
+help_wontfix: CommandHelp = (
+    'close an issue and mark it as not going to be fixed',
+    '<id> [<comment>]',
+    []
+)
+
+
+def cmd_wontfix(config: Config, args: List[str]) -> None:
+    # Args
+    issue_id: IssueID
+    comment: Optional[str] = None
+    # Parse args
+    issue_id = _arg_issue_id(args, config)
+    if args:
+        comment = args.pop(0)
+    _arg_disallow_trailing(args)
+    # Run command
+    _change_status(config.user, issue_id, IssueStatus.WONTFIX,
                    'marked as wontfix', 'closed and marked as wontfix',
-                   comment_text=args.comment)
+                   comment_text=comment)
 
 
-def cmd_blocked_by(config: Config, args: argparse.Namespace) -> None:
-    if args.blocked_id == args.blocking_id:
-        print("An issue can't block itself")
-        return
-    issue = Issue.load_from_id(args.blocked_id)
-    if args.blocking_id in issue.blocked_by:
-        print(f'Issue #{args.blocked_id.shorten(config)} is already '
-              f'blocked by #{args.blocking_id.shorten(config)}')
+help_blocked_by: CommandHelp = (
+    'mark an issue as being blocked by another issue from completion',
+    '<blocked-id> <blocking-id>',
+    []
+)
+
+
+def cmd_blocked_by(config: Config, args: List[str]) -> None:
+    # Args
+    blocked_id: IssueID
+    blocking_id: IssueID
+
+    # Parse args
+    blocked_id = _arg_issue_id(args, config, restrict_to_own=True)
+    blocking_id = _arg_issue_id(args, config)
+    _arg_disallow_trailing(args)
+    if blocked_id == blocking_id:
+        error("an issue can't block itself")
+
+    # Run command
+    issue = Issue.load_from_id(blocked_id)
+    if blocking_id in issue.blocked_by:
+        print(f'Issue #{blocked_id.shorten(config)} is already '
+              f'blocked by #{blocking_id.shorten(config)}')
     else:
-        issue.blocked_by.add(args.blocking_id)
+        issue.blocked_by.add(blocking_id)
         issue.save()
-        print(f'Issue #{args.blocked_id.shorten(config)} marked as '
-              f'blocked by #{args.blocking_id.shorten(config)}')
+        print(f'Issue #{blocked_id.shorten(config)} marked as '
+              f'blocked by #{blocking_id.shorten(config)}')
 
 
-def cmd_comment(config: Config, args: argparse.Namespace) -> None:
-    comment = Comment(issue_id=args.issue_id,
+help_unblock: CommandHelp = (
+    'mark an issue as not being blocked by another issue from completion',
+    '<blocked-id> <blocking-id>',
+    []
+)
+
+
+def cmd_unblock(config: Config, args: List[str]) -> None:
+    print('TODO')
+
+
+help_comment: CommandHelp = (
+    'add a comment to an issue',
+    '<id> <message>',
+    []
+)
+
+
+def cmd_comment(config: Config, args: List[str]) -> None:
+    # Args
+    issue_id: IssueID
+    message: str
+
+    # Parse args
+    issue_id = _arg_issue_id(args, config)
+    message = _arg_positional(args, 'message')
+    _arg_disallow_trailing(args)
+
+    # Run command
+    comment = Comment(issue_id=issue_id,
                       user=config.user,
                       created=datetime.now(),
-                      message=args.message)
+                      message=message)
     comment.save()
     print('Comment added')
 
 
-def cmd_list(config: Config, args: argparse.Namespace) -> None:
+help_list: CommandHelp = (
+    'list all issues or ones matching certain filters',
+    '[-s <status>] [-t <tag>...] [-T <tag>] [-Bbn]',
+    [
+        ('-s/--status <status>', 'only show issues with this status'),
+        ('', f'(one of: {", ".join(s.value for s in IssueStatus)})'),
+        ('-t/--tags <tag>...', 'only show issues with these tags'),
+        ('-T/--without-tags <tag>...', 'only show issues without these tags'),
+        ('-B/--blocking', 'only show issues blocking another issue'),
+        ('-b/--blocked', 'only show issues blocked by other issues'),
+        ('-n/--no-blocks', "don't show blocked or blocking issues")
+    ]
+)
+
+
+def cmd_list(config: Config, args: List[str]) -> None:
+    # Arguments
+    status: Optional[IssueStatus] = None
+    tags: Optional[Set[str]] = None
+    without_tags: Optional[Set[str]] = None
+    blocked = False
+    blocking = False
+    no_blocks = False
+
+    # Parse the arguments
+    while args:
+        arg = args.pop(0)
+        _arg_disallow_positional(arg)
+        if arg in {'-s', '--status'}:
+            try:
+                raw_status = args.pop(0)
+            except IndexError:
+                error('--status needs an argument')
+            else:
+                try:
+                    status = IssueStatus(raw_status)
+                except ValueError:
+                    error('invalid status: {raw_status}')
+        elif arg in {'-t', '--tags'}:
+            tags = _arg_tags(args, '--tags')
+        elif arg in {'-T', '--without-tags'}:
+            without_tags = _arg_tags(args, '--without-tags')
+        elif arg in {'-b', '--blocked'}:
+            blocked = True
+        elif arg in {'-B', '--blocking'}:
+            blocking = True
+        elif arg in {'-n', '--no-blocks'}:
+            no_blocks = True
+        else:
+            _arg_unknown_optional(arg)
+    if no_blocks and (blocked or blocking):
+        error('--blocked or --blocking can\'t be used with --no-blocks')
+
+    # Run command
     all_issues = load_issues()
     issues: List[Issue] = []
     for issue in all_issues:
-        blocking = [i for i in all_issues
-                    if i.id_ != issue.id_ and issue.id_ in i.blocked_by]
-        if args.tags and not args.tags.issubset(issue.tags):
+        blocking_issues = [i for i in all_issues
+                           if i.id_ != issue.id_ and issue.id_ in i.blocked_by]
+        if tags and not tags.issubset(issue.tags):
             continue
-        if args.without_tags and args.without_tags.intersection(issue.tags):
+        if without_tags and without_tags.intersection(issue.tags):
             continue
-        if args.blocking and not any(blocking):
+        if blocking and not any(blocking_issues):
             continue
-        if args.blocked and not issue.blocked_by:
+        if blocked and not issue.blocked_by:
             continue
-        if args.no_blocks and (issue.blocked_by or any(blocking)):
+        if no_blocks and (issue.blocked_by or any(blocking_issues)):
             continue
-        if args.status:
-            status = IssueStatus(args.status)
+        if status:
             if status == IssueStatus.CLOSED \
                     and issue.status == IssueStatus.OPEN:
                 continue
@@ -220,237 +528,114 @@ def cmd_list(config: Config, args: argparse.Namespace) -> None:
         print(line)
 
 
-def cmd_log(config: Config, args: argparse.Namespace) -> None:
+help_log: CommandHelp = (
+    'show a log of the latest actions (open/close/etc)',
+    '',
+    []
+)
+
+
+def cmd_log(config: Config, args: List[str]) -> None:
     print('TODO')
 
 
-def cmd_tag(config: Config, args: argparse.Namespace) -> None:
+help_tag: CommandHelp = (
+    'handle registered tags in this ishu project',
+    '',
+    []
+)
+
+
+def cmd_tag(config: Config, args: List[str]) -> None:
     print('TODO')
 
 
 # == Command line parsing ==
 
-def add_conf_parser_options(p: argparse.ArgumentParser) -> None:
-    g = p.add_mutually_exclusive_group(required=True)
-    g.add_argument('--list', help='list all settings and their values',
-                   action='store_true', dest='list_settings')
-    g.add_argument('--get', help='print the value of a setting',
-                   choices=Config.settings, metavar='KEY', dest='get_setting')
-    g.add_argument('--set', help='set the value of a setting',
-                   nargs=2, metavar=('KEY', 'VALUE'), dest='set_setting')
-
-
-class Command(NamedTuple):
-    aliases: List[str]
-    desc: str
-
-
-def parse_commands(config: Config) -> None:
-    parser = argparse.ArgumentParser(usage='%(prog)s [-h | --help] [COMMAND]',
-                                     add_help=False)
-    parser.set_defaults(func=None)
-    subparsers = parser.add_subparsers()
-
-    commands: Dict[str, 'Command'] = {}
-
-    parser.add_argument('--help', '-h', help='show this help message and exit',
-                        action='store_true')
-
-    def show_help() -> None:
-        parser.print_usage()
-        table: List[Union[str, Iterable[str]]] = ['\ncommands:']
-        for cmd_name, cmd in commands.items():
-            name = ', '.join([cmd_name] + cmd.aliases)
-            table.append((f'  {name}', cmd.desc))
-        table.extend(
-            ['\noptional arguments:',
-             ('  -h, --help', 'show this help message and exit')]
-        )
-        for line in format_table(table, column_spacing=4, wrap_columns={1}):
-            print(line)
-
-    def tag_list_type(text: str) -> Set[str]:
-        return {t for t in text.split(',') if t}
-
-    def issue_id_type(restrict_to_own: bool = False
-                      ) -> Callable[[str], IssueID]:
-        def _id_type(text: str) -> IssueID:
-            try:
-                issue_id = IssueID.load(config, text,
-                                        restrict_to_own=restrict_to_own)
-            except Exception as e:
-                raise argparse.ArgumentTypeError(str(e))
-            else:
-                return issue_id
-        return _id_type
-
-    def issue_id_list_type(text: str) -> List[IssueID]:
-        out = []
-        for item in text.split(','):
-            out.append(issue_id_type()(item))
-        return out
-
-    @contextmanager
-    def add_cmd(cmd_name: str, aliases: List[str],
-                callback: Callable[[Config, argparse.Namespace], None],
-                description: str, add_help: bool = True
-                ) -> Iterator[argparse.ArgumentParser]:
-        p = subparsers.add_parser(cmd_name, aliases=aliases, add_help=add_help)
-        commands[cmd_name] = Command(aliases, description)
-        yield p
-        p.set_defaults(func=callback)
-
-    def add_id_argument(p: argparse.ArgumentParser) -> None:
-        p.add_argument('issue_id', type=issue_id_type(),
-                       help='the id of any issue')
-
-    def add_own_id_argument(p: argparse.ArgumentParser) -> None:
-        p.add_argument('issue_id', type=issue_id_type(restrict_to_own=True),
-                       help='the id of one of your own issues')
-
-    # Init
-    with add_cmd('init', [], cmd_init, 'initialize an ishu directory') as c:
-        pass
-
-    # Configure
-    with add_cmd('conf', ['cfg'], cmd_configure,
-                 'view and edit settings', add_help=True) as c:
-        add_conf_parser_options(c)
-
-    # Show info
-    with add_cmd('show', ['s'], cmd_info, 'show info about an issue') as c:
-        add_id_argument(c)
-
-    # Open
-    with add_cmd('open', ['o'], cmd_open, 'open a new issue') as c:
-        c.add_argument('--tags', '-t', type=tag_list_type)
-        c.add_argument('--blocked-by', '-b', type=issue_id_list_type,
-                       metavar='ISSUE')
-        c.add_argument('description')
-
-    # Reopen
-    with add_cmd('reopen', ['r'], cmd_reopen, 'reopen a closed issue') as c:
-        add_own_id_argument(c)
-
-    # Edit
-    with add_cmd('edit', ['e'], cmd_edit, 'edit an issue') as c:
-        add_id_argument(c)
-        c.add_argument('--desc', '-d')
-        c.add_argument('--add-tags', '-t', type=tag_list_type)
-        c.add_argument('--remove-tags', '-T', type=tag_list_type)
-
-    # Fixed
-    with add_cmd('fixed', ['f'], cmd_fixed,
-                 'close an issue and mark it as fixed') as c:
-        add_id_argument(c)
-        c.add_argument('comment', nargs='?')
-
-    # Wontfix
-    with add_cmd('wontfix', ['w'], cmd_wontfix,
-                 'close an issue and mark it as not going to be fixed') as c:
-        add_id_argument(c)
-        c.add_argument('comment', nargs='?')
-
-    # Blocking
-    with add_cmd('blocked', ['b'], cmd_blocked_by,
-                 ('mark an issue as being blocked by another '
-                  'issue from completion')) as c:
-        c.add_argument('blocked-id', type=issue_id_type(restrict_to_own=True),
-                       metavar='ISSUE')
-        c.add_argument('blocking-id', type=issue_id_type(),
-                       metavar='ISSUE')
-
-    # Unblock
-    with add_cmd('unblock', ['ub'], cmd_blocked_by,
-                 ('mark an issue as not being blocked by another '
-                  'issue from completion')) as c:
-        c.add_argument('blocked-id', type=issue_id_type(restrict_to_own=True),
-                       metavar='ISSUE')
-        c.add_argument('blocking-id', type=issue_id_type(),
-                       metavar='ISSUE')
-
-    # Comment
-    with add_cmd('comment', ['c'], cmd_comment,
-                 'add a comment to an issue') as c:
-        add_id_argument(c)
-        c.add_argument('message')
-
-    # List
-    with add_cmd('list', ['ls'], cmd_list,
-                 'list all issues or ones matching certain filters') as c:
-        c.add_argument('--status', '-s',
-                       choices=[s.value for s in IssueStatus])
-        c.add_argument('--tags', '-t', type=tag_list_type)
-        c.add_argument('--without-tags', '-T', type=tag_list_type,
-                       metavar='TAGS')
-        block_group = c.add_mutually_exclusive_group()
-        block_group.add_argument('--blocked', '-b', action='store_true',
-                                 help='show only blocked issues')
-        block_group.add_argument('--blocking', '-B', action='store_true',
-                                 help='show only blocking issues')
-        block_group.add_argument('--no-blocks', '-n', action='store_true',
-                                 help='don\'t show any blocked '
-                                      'or blocking issues')
-
-    # Log
-    with add_cmd('log', ['l'], cmd_log,
-                 'show a log of the latest actions (open/close/etc)') as c:
-        c.add_argument('max-count', type=int, nargs='?')
-
-    # Tag
-    with add_cmd('tag', ['t'], cmd_tag, 'edit the tags of an issue') as c:
-        c.add_argument('--new', '-n', type=tag_list_type)
-        c.add_argument('--remove', '-r', type=tag_list_type)
-        c.add_argument('--edit', '-e', nargs=2, help='rename tag')
-        c.add_argument('--list', '-l')
-
-    # Fiddle with sys.argv a litte to get better error messages
-    valid_subcommands: Set[str] = {c for cmd_name, cmd in commands.items()
-                                   for c in [cmd_name] + cmd.aliases}
-    sysargs = sys.argv[1:]
-    if sysargs and sysargs[0] in {'-h', '--help'}:
-        sysargs = sysargs[:1]
-    elif sysargs and sysargs[0] not in valid_subcommands:
-        parser.error(f'{sysargs[0]} is not a valid command')
+def parse_commands_new() -> None:
+    help_aliases = {'-h', '--help'}
+    commands = {
+        # Init
+        'init': (None, cmd_init, help_init),
+        # Configure
+        'conf': ('cfg', cmd_configure, help_configure),
+        # Show info
+        'show': ('s', cmd_info, help_info),
+        # Open issue
+        'open': ('o', cmd_open, help_open),
+        # Reopen issue
+        'reopen': ('r', cmd_reopen, help_reopen),
+        # Edit issue
+        'edit': ('e', cmd_edit, help_edit),
+        # Close and fix issue
+        'fixed': ('f', cmd_fixed, help_fixed),
+        # Close and mark an issue as wontfix
+        'wontfix': ('w', cmd_wontfix, help_wontfix),
+        # Mark an issue as blocked
+        'blocked': ('b', cmd_blocked_by, help_blocked_by),
+        # Mark an issue as not blocked
+        'unblock': ('ub', cmd_unblock, help_unblock),
+        # Add comment
+        'comment': ('c', cmd_comment, help_comment),
+        # List issues
+        'list': ('ls', cmd_list, help_list),
+        # Show action log
+        'log': ('l', cmd_log, help_log),
+        # Handle tags
+        'tag': ('t', cmd_tag, help_tag),
+    }
+    sys_cmd = Path(sys.argv[0]).name
+    show_help = False
+    args = sys.argv[1:]
+    if not args or len(args) == 1 and args[0] in help_aliases:
+        print(f'Usage: {sys_cmd} [-h | --help] <command> [<arguments>]')
+        print('\nCommands:')
+        command_table = [
+            ('  help', 'show help for a command')
+        ]
+        command_table.extend((f'  {cmd}, {abbr or ""}'.rstrip(', '), desc)
+                             for cmd, (abbr, _, (desc, _, _))
+                             in commands.items())
+        print('\n'.join(format_table(command_table, column_spacing=2,
+                                     wrap_columns={1})))
         return
-    args = parser.parse_args(args=sysargs)
-    if args.func is None:
-        show_help()
+    if args[0] in help_aliases.union({'help'}):
+        show_help = True
+        args.pop(0)
+    abbrevs = {abbr: key for key, (abbr, *_) in commands.items() if abbr}
+    cmd_text = args.pop(0)
+    if cmd_text in abbrevs:
+        cmd_text = abbrevs[cmd_text]
+    if cmd_text not in commands:
+        error(f'unknown command: {cmd_text}')
     else:
-        if not ROOT.exists() and args.func != cmd_init:
-            print(f'{C_RED}No ishu directory found! '
-                  f'Run `ishu init` to create one.{C_RESET}')
+        _, func, (help_desc, help_usage, help_lines) = commands[cmd_text]
+        if show_help or (args and args[0] in help_aliases):
+            print(f'Usage: {sys_cmd} {cmd_text} {help_usage}'.rstrip())
+            print()
+            print('\n'.join(format_table([('Description:', help_desc)],
+                                         column_spacing=1, wrap_columns={1})))
+            if help_lines:
+                print('\nOptions:')
+                print('\n'.join(format_table((('  ' + arg, desc)
+                                              for arg, desc in help_lines),
+                                             column_spacing=3,
+                                             wrap_columns={1})))
         else:
-            args.func(config, args)
-
-
-def parse_commands_not_initialized() -> None:
-    desc = (f'{C_RED}You have not set you username in the config, '
-            f'which you need before you can use the rest of the program.'
-            f'Run `ishu conf --set user USER` to set it.{C_RESET}')
-    parser = argparse.ArgumentParser(description=desc)
-    parser.set_defaults(func=None)
-    subparsers = parser.add_subparsers(dest='cmd')
-    # Conf parser
-    conf_parser = subparsers.add_parser('conf', aliases=['cfg'],
-                                        add_help=True)
-    conf_parser.set_defaults(func=cmd_configure)
-    add_conf_parser_options(conf_parser)
-    # Parser everything
-    args = parser.parse_args()
-    if args.func is None:
-        parser.print_help()
-    else:
-        args.func(None, args)
+            try:
+                config = Config.load()
+            except (FileNotFoundError, IncompleteConfigException):
+                if func != cmd_configure:
+                    error('you need to set your username before using ishu! '
+                          'Please use the conf command to set it.')
+                else:
+                    cmd_configure(None, args)
+            else:
+                func(config, args)
 
 
 def main() -> None:
-    try:
-        config = Config.load()
-    except (FileNotFoundError, IncompleteConfigException):
-        parse_commands_not_initialized()
-    else:
-        parse_commands(config)
+    parse_commands_new()
 
 
 if __name__ == '__main__':
