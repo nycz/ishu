@@ -8,8 +8,14 @@ from typing import (Any, Collection, Dict, Iterable, List,
                     Optional, Sized, Tuple, Union)
 
 
-C_RED = '\x1b[31m'
 C_RESET = '\x1b[0m'
+C_BOLD = '\x1b[1m'
+C_RED = '\x1b[31m'
+C_GREEN = '\x1b[32m'
+C_YELLOW = '\x1b[33m'
+C_BLUE = '\x1b[34m'
+C_MAGENTA = '\x1b[35m'
+C_CYAN = '\x1b[36m'
 
 
 ROOT = Path().resolve() / '.ishu'
@@ -70,6 +76,8 @@ def format_table(items: Iterable[Union[str, Iterable[str]]],
         wrappable_space = -1
     if titles:
         rows.insert(1, '-' * (sum(max_widths) + total_spacing))
+        surround_rows[-2] = (C_BOLD, C_RESET)
+        surround_rows[-1] = (C_CYAN, C_RESET)
     for row_num, row in enumerate(rows, -2 if titles else 0):
         prefix, suffix = surround_rows.get(row_num, ('', ''))
         if isinstance(row, str):
@@ -77,7 +85,7 @@ def format_table(items: Iterable[Union[str, Iterable[str]]],
         else:
             cells = [textwrap.wrap(cell, width=wrappable_space)
                      if wrappable_space > 0 and n in wrap_columns
-                     else [cell.ljust(max_widths[n])]
+                     else [cell + ' ' * (max_widths[n] - strlen(cell))]
                      for n, cell in enumerate(row)]
             for subrow in zip_longest(*cells):
                 subcells = (c or (' ' * max_widths[n])

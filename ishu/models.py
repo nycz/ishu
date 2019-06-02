@@ -7,7 +7,8 @@ import textwrap
 from typing import (Any, FrozenSet, Dict, Iterable, List, NamedTuple,
                     Optional, Set, Tuple)
 
-from .common import (Config, format_table, issue_path, ISSUE_FNAME,
+from .common import (C_BOLD, C_RESET, Config, format_table, issue_path,
+                     ISSUE_FNAME,
                      TIMESTAMP_FMT, user_path, user_paths, usernames)
 
 
@@ -143,6 +144,7 @@ class Issue(NamedTuple):
                                    for i in blocking_issues)),
             ('Description', self.description),
         ]
+        table = [(C_BOLD + n + C_RESET, d) for n, d in table]
         info = '\n'.join(format_table(table, wrap_columns={1},
                                       column_spacing=3))
         if self.comments:

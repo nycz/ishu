@@ -8,7 +8,7 @@ from pathlib import Path
 import sys
 from typing import List, Optional, Set, Tuple
 
-from .common import (C_RED, C_RESET, Config, format_table,
+from .common import (C_BOLD, C_CYAN, C_RED, C_RESET, Config, format_table,
                      IncompleteConfigException,
                      InvalidConfigException, ROOT, TAGS_PATH)
 from .models import Comment, Issue, IssueID, IssueStatus, load_issues
@@ -750,12 +750,14 @@ def parse_commands_new() -> None:
     show_help = False
     args = sys.argv[1:]
     if not args or len(args) == 1 and args[0] in help_aliases:
-        print(f'Usage: {sys_cmd} [-h | --help] <command> [<arguments>]')
-        print('\nCommands:')
+        print(f'{C_BOLD}Usage:{C_RESET} {sys_cmd} '
+              f'[-h | --help] <command> [<arguments>]')
+        print(f'\n{C_BOLD}Commands:{C_RESET}')
         command_table = [
-            ('  help', 'show help for a command')
+            (C_CYAN + '  help' + C_RESET, 'show help for a command')
         ]
-        command_table.extend((f'  {cmd}, {abbr or ""}'.rstrip(', '), desc)
+        command_table.extend((f'{C_CYAN}  {cmd}, {abbr or ""}'.rstrip(', ')
+                              + C_RESET, desc)
                              for cmd, (abbr, _, (desc, _, _))
                              in commands.items())
         print('\n'.join(format_table(command_table, column_spacing=2,
@@ -773,12 +775,14 @@ def parse_commands_new() -> None:
     else:
         _, func, (help_desc, help_usage, help_lines) = commands[cmd_text]
         if show_help or (args and args[0] in help_aliases):
-            print(f'Usage: {sys_cmd} {cmd_text} {help_usage}'.rstrip())
+            print(f'{C_BOLD}Usage:{C_RESET} {sys_cmd} '
+                  f'{cmd_text} {help_usage}'.rstrip())
             print()
-            print('\n'.join(format_table([('Description:', help_desc)],
+            print('\n'.join(format_table([(f'{C_BOLD}Description:{C_RESET}',
+                                           help_desc)],
                                          column_spacing=1, wrap_columns={1})))
             if help_lines:
-                print('\nOptions:')
+                print(f'\n{C_BOLD}Options:{C_RESET}')
                 print('\n'.join(format_table((('  ' + arg, desc)
                                               for arg, desc in help_lines),
                                              column_spacing=3,
