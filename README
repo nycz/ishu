@@ -2,3 +2,9 @@ ishu
 ====
 
 Minimalistic local issue tracker
+
+
+Usage
+-----
+Use the ISHUROOT environment variable to use a different root directory
+than the current working directory.

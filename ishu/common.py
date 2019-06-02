@@ -1,5 +1,6 @@
 from itertools import zip_longest
 import json
+import os
 from pathlib import Path
 import re
 import shutil
@@ -18,7 +19,17 @@ C_MAGENTA = '\x1b[35m'
 C_CYAN = '\x1b[36m'
 
 
-ROOT = Path().resolve() / '.ishu'
+def _get_root() -> Tuple[bool, Path]:
+    env_root = os.environ.get('ISHUROOT')
+    if env_root:
+        env_path = Path(env_root).expanduser().resolve()
+        if env_path.exists():
+            return True, (env_path / '.ishu')
+    return False, (Path().resolve() / '.ishu')
+
+
+ROOT_OVERRIDE, ROOT = _get_root()
+
 # Don't call this 'tags' to avoid conflicts with ctags
 TAGS_PATH = ROOT / 'registered_tags'
 ISSUE_FNAME = 'issue'

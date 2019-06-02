@@ -8,9 +8,9 @@ from pathlib import Path
 import sys
 from typing import List, Optional, Set, Tuple
 
-from .common import (C_BOLD, C_CYAN, C_RED, C_RESET, Config, format_table,
-                     IncompleteConfigException,
-                     InvalidConfigException, ROOT, TAGS_PATH)
+from .common import (C_BOLD, C_CYAN, C_RED, C_RESET, C_YELLOW,
+                     Config, format_table, IncompleteConfigException,
+                     InvalidConfigException, ROOT, ROOT_OVERRIDE, TAGS_PATH)
 from .models import Comment, Issue, IssueID, IssueStatus, load_issues
 
 
@@ -715,6 +715,8 @@ def cmd_tag(config: Config, args: List[str]) -> None:
 # == Command line parsing ==
 
 def parse_commands_new() -> None:
+    if ROOT_OVERRIDE:
+        print(f'{C_YELLOW}[Using root: {ROOT}]{C_RESET}\n')
     help_aliases = {'-h', '--help'}
     commands = {
         # Init
