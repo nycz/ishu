@@ -5,10 +5,12 @@ from pathlib import Path
 import re
 import textwrap
 from typing import (Any, FrozenSet, Dict, Iterable, List, NamedTuple,
-                    Optional, Set, Tuple)
+                    Optional, Set)
 
-from .common import (C_BOLD, C_RESET, Config, format_table, issue_path,
-                     ISSUE_FNAME,
+from libwui.cli import format_table
+from libwui.colors import BOLD, RESET
+
+from .common import (Config, issue_path, ISSUE_FNAME,
                      TIMESTAMP_FMT, user_path, user_paths, usernames)
 
 
@@ -16,8 +18,8 @@ class IssueID(NamedTuple):
     user: str
     num: int
 
-    def shorten(self, config: Config) -> str:
-        if self.user == config.user:
+    def shorten(self, config: Optional[Config]) -> str:
+        if config is not None and self.user == config.user:
             prefix = ''
         else:
             users = usernames()
@@ -144,7 +146,7 @@ class Issue(NamedTuple):
                                    for i in blocking_issues)),
             ('Description', self.description),
         ]
-        table = [(C_BOLD + n + C_RESET, d) for n, d in table]
+        table = [(BOLD + n + RESET, d) for n, d in table]
         info = '\n'.join(format_table(table, wrap_columns={1},
                                       column_spacing=3))
         if self.comments:
