@@ -633,7 +633,7 @@ def cmd_list(config: Config, args: List[str]) -> None:
         for i in issues
     ]
     try:
-        for line in format_table(table, wrap_columns={-1}, titles=titles,
+        for line in format_table(table, wrap_columns={-1, -2}, titles=titles,
                                  require_min_widths=frozenset({(-1, 40)})):
             print(line)
     except cli.TooNarrowColumn:
@@ -651,7 +651,7 @@ def cmd_list(config: Config, args: List[str]) -> None:
              i.description)
             for i in issues
         ]
-        for line in format_table(shorter_table, wrap_columns={-1},
+        for line in format_table(shorter_table, wrap_columns={-1, -2},
                                  titles=shorter_titles):
             print(line)
 
