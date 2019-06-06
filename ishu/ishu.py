@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 from collections import Counter
-from datetime import datetime
+from datetime import datetime, timedelta
 from itertools import chain
 import json
 from operator import itemgetter
@@ -9,7 +9,7 @@ from typing import Any, Callable, List, Optional, Set, Tuple
 from libwui import cli
 from libwui.cli import (CommandDef, CommandHelp, error, format_table,
                         OptionHelp, parse_cmds)
-from libwui.colors import RED, RESET, YELLOW
+from libwui.colors import CYAN, GREEN, RED, RESET, YELLOW
 
 from .common import (Config, IncompleteConfigException,
                      InvalidConfigException, ROOT, ROOT_OVERRIDE, TAGS_PATH)
@@ -521,7 +521,18 @@ def cmd_list(config: Config, args: List[str]) -> None:
                 continue
         issues.append(issue)
 
-    date_fmt = '%Y-%m-%d %H:%M'
+    date_fmt = '%Y-%m-%d'
+    time_fmt = '%H:%M'
+    datetime_fmt = f'{date_fmt} {time_fmt}'
+    one_day_ago = datetime.now() - timedelta(days=1)
+
+    def _date_or_time_fmt(dt: datetime) -> str:
+        return dt.strftime(time_fmt if dt > one_day_ago else date_fmt)
+
+    status_icon = {IssueStatus.FIXED: GREEN + '',
+                   IssueStatus.OPEN: CYAN + '',
+                   IssueStatus.CLOSED: GREEN + '',
+                   IssueStatus.WONTFIX: RED + ''}
 
     titles = ('ID', 'User', 'Status', 'Blocks', 'Created', 'Updated',
               'Comments', 'Description')
@@ -531,14 +542,33 @@ def cmd_list(config: Config, args: List[str]) -> None:
          i.status.value.capitalize(),
          (('b' if i.blocked_by else '')
           + ('B' if i.id_ in is_blocking else '')),
-         i.created.strftime(date_fmt),
-         (i.updated.strftime(date_fmt) if i.updated > i.created else ''),
+         i.created.strftime(datetime_fmt),
+         (i.updated.strftime(datetime_fmt) if i.updated > i.created else ''),
          str(len(i.comments)),
          i.description)
         for i in issues
     ]
-    for line in format_table(table, wrap_columns={7}, titles=titles):
-        print(line)
+    try:
+        for line in format_table(table, wrap_columns={7}, titles=titles,
+                                 require_min_widths=frozenset({(-1, 40)})):
+            print(line)
+    except cli.TooNarrowColumn:
+        shorter_titles = ('ID', 'S', ' ', 'Created', 'Updated',
+                          ' ', 'Description')
+        shorter_table = [
+            (i.id_.shorten(None),
+             status_icon[i.status] + RESET,
+             (('b' if i.blocked_by else '')
+              + ('B' if i.id_ in is_blocking else '')),
+             _date_or_time_fmt(i.created),
+             (_date_or_time_fmt(i.updated) if i.updated > i.created else ''),
+             str(len(i.comments)),
+             i.description)
+            for i in issues
+        ]
+        for line in format_table(shorter_table, wrap_columns={6},
+                                 titles=shorter_titles):
+            print(line)
 
 
 help_log = CommandHelp(
