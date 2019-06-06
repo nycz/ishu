@@ -56,10 +56,11 @@ class InvalidConfigException(Exception):
 
 
 class Config:
-    settings = frozenset(['user'])
+    settings = frozenset(['user', 'aliases'])
 
     def __init__(self, user: str) -> None:
         self.user = user
+        self.aliases: Dict[str, str] = {}
 
     def __getitem__(self, key: str) -> Any:
         if key == 'user':
@@ -79,12 +80,16 @@ class Config:
     @classmethod
     def load(cls) -> 'Config':
         data: Dict[str, Any] = json.loads(CONFIG_PATH.read_text())
-        return Config(user=data['user'])
+        cfg = Config(user=data['user'])
+        if 'aliases' in data:
+            cfg.aliases = data['aliases']
+        return cfg
 
     def save(self) -> None:
         if not CONFIG_PATH.parent.exists():
             CONFIG_PATH.parent.mkdir(parents=True, exist_ok=True)
         data: Dict[str, Any] = {
-            'user': self.user
+            'user': self.user,
+            'aliases': self.aliases,
         }
         CONFIG_PATH.write_text(json.dumps(data, indent=2))

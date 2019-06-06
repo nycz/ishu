@@ -54,6 +54,89 @@ def cmd_init(config: Config, args: List[str]) -> None:
         print(f'Created ishu project in {ROOT}')
 
 
+help_alias = CommandHelp(
+    description='manage command aliases',
+    usage='(-l | -g <alias> | -s <alias> <value> | -r <alias>)',
+    options=[
+        OptionHelp(spec='-l/--list',
+                   description='list settings'),
+        OptionHelp(spec='-g/--get <alias>',
+                   description='show the value of an alias'),
+        OptionHelp(spec='-s/--set <alias> <value>',
+                   description='set the value of an alias'),
+        OptionHelp(spec='-r/--remove <alias>',
+                   description='remove an alias'),
+    ]
+)
+
+
+def cmd_alias(config: Config, args: List[str]) -> None:
+    # Args
+    list_aliases = False
+    get_alias: Optional[str] = None
+    set_alias: Optional[Tuple[str, str]] = None
+    remove_alias: Optional[str] = None
+    # Parse args
+    if not args:
+        list_aliases = True
+    else:
+        arg = args.pop(0)
+        cli.arg_disallow_positional(arg)
+        if arg in {'-l', '--list'}:
+            list_aliases = True
+        elif arg in {'-g', '--get'}:
+            try:
+                get_alias = args.pop(0)
+            except IndexError:
+                error('--get needs an argument')
+        elif arg in {'-r', '--remove'}:
+            try:
+                remove_alias = args.pop(0)
+            except IndexError:
+                error('--remove needs an argument')
+        elif arg in {'-s', '--set'}:
+            try:
+                set_alias = (args.pop(0), args.pop(0))
+            except IndexError:
+                error('--set needs two arguments')
+        else:
+            cli.arg_unknown_optional(arg)
+    cli.arg_disallow_trailing(args)
+    # List aliases
+    if list_aliases:
+        if config.aliases:
+            print('Aliases:')
+            for key, value in sorted(config.aliases.items()):
+                print(f'  {key} = {value}')
+        else:
+            print('No aliases')
+    # Get aliases
+    elif get_alias:
+        if get_alias not in config.aliases:
+            error(f'unknown alias: {get_alias}')
+        else:
+            print(f'{get_alias} = {config.aliases[get_alias]}')
+    # Remove alias
+    elif remove_alias:
+        if remove_alias not in config.aliases:
+            error(f'unknown alias: {remove_alias}')
+        else:
+            del config.aliases[remove_alias]
+            config.save()
+            print(f'Alias {remove_alias} removed')
+    # Set alias
+    elif set_alias:
+        key, value = set_alias
+        is_new = key not in config.aliases
+        config.aliases[key] = value
+        print(f'{key} -> {value}')
+        config.save()
+        if is_new:
+            print('Alias created')
+        else:
+            print('Alias updated')
+
+
 help_configure = CommandHelp(
     description='view and edit settings',
     usage='(-l | -g <key> | -s <key> <value> )',
@@ -742,6 +825,8 @@ def main() -> None:
         'init': CommandDef([], cmd_init, help_init),
         # Configure
         'conf': CommandDef(['cfg'], cmd_configure, help_configure),
+        # Manage aliases
+        'alias': CommandDef(['a'], cmd_alias, help_alias),
         # Show info
         'show': CommandDef(['s'], cmd_info, help_info),
         # Open issue
@@ -788,7 +873,8 @@ def main() -> None:
             else:
                 func(config, args)
 
-    parse_cmds(commands, callback)
+    aliases = config.aliases if config is not None else {}
+    parse_cmds(commands, callback, aliases)
 
 
 if __name__ == '__main__':
