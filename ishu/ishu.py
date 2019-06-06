@@ -617,24 +617,24 @@ def cmd_list(config: Config, args: List[str]) -> None:
                    IssueStatus.CLOSED: GREEN + '',
                    IssueStatus.WONTFIX: RED + ''}
 
-    titles = ('ID', 'User', 'Status', 'Blocks', 'Created', 'Updated',
-              'Comments', 'Tags', 'Description')
+    titles = ('ID', 'User', 'S', ' ', 'Created', 'Updated',
+              ' ', 'Tags', 'Description')
     table = [
         (str(i.id_.num),
          i.id_.user,
-         i.status.value.capitalize(),
+         status_icon[i.status] + RESET,
          (('b' if i.blocked_by else '')
           + ('B' if i.id_ in is_blocking else '')),
          i.created.strftime(datetime_fmt),
          (i.updated.strftime(datetime_fmt) if i.updated > i.created else ''),
          str(len(i.comments)),
-         ', '.join(sorted(i.tags)),
+         ', '.join(f'#{tag}' for tag in sorted(i.tags)),
          i.description)
         for i in issues
     ]
     try:
         for line in format_table(table, wrap_columns={-1, -2}, titles=titles,
-                                 require_min_widths=frozenset({(-1, 40)})):
+                                 require_min_widths=frozenset({(-1, 30)})):
             print(line)
     except cli.TooNarrowColumn:
         shorter_titles = ('ID', 'S', ' ', 'Created', 'Updated',
@@ -647,7 +647,7 @@ def cmd_list(config: Config, args: List[str]) -> None:
              _date_or_time_fmt(i.created),
              (_date_or_time_fmt(i.updated) if i.updated > i.created else ''),
              str(len(i.comments)),
-             ', '.join(sorted(i.tags)),
+             ', '.join(f'#{tag}' for tag in sorted(i.tags)),
              i.description)
             for i in issues
         ]
