@@ -260,7 +260,7 @@ def cmd_open(config: Config, args: List[str]) -> None:
             tags = cli.arg_tags(args, '--tags')
         elif arg in {'-b', '--blocked-by'}:
             blocked_by = set()
-            while args and not arg[0].startswith('-'):
+            while args and not args[0].startswith('-'):
                 blocked_by.add(_arg_issue_id(args, config, specify_id=True))
         else:
             cli.arg_unknown_optional(arg)
