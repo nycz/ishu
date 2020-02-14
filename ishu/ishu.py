@@ -59,7 +59,7 @@ help_alias = CommandHelp(
     usage='(-l | -g <alias> | -s <alias> <value> | -r <alias>)',
     options=[
         OptionHelp(spec='-l/--list',
-                   description='list settings'),
+                   description='list aliases'),
         OptionHelp(spec='-g/--get <alias>',
                    description='show the value of an alias'),
         OptionHelp(spec='-s/--set <alias> <value>',
@@ -184,21 +184,21 @@ def cmd_configure(config: Optional[Config], args: List[str]) -> None:
         if config is None:
             print(no_conf_help)
         print('Settings:')
-        for key in sorted(Config.settings):
+        for key in sorted(Config.editable_settings):
             print(f'  {key} = {config[key] if config else ""}')
     # Get settings
     elif get_setting:
         if config is None:
             print(no_conf_help)
             error("can't get setting when there is no config")
-        elif get_setting not in Config.settings:
+        elif get_setting not in Config.editable_settings:
             error(f'unknown setting: {get_setting}')
         else:
             print(f'{get_setting} = {config[get_setting]}')
     # Set settings
     elif set_setting:
         key, value = set_setting
-        if key not in Config.settings:
+        if key not in Config.editable_settings:
             error(f'unknown setting: {key}')
         try:
             updated_config: Config

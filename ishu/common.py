@@ -57,6 +57,7 @@ class InvalidConfigException(Exception):
 
 class Config:
     settings = frozenset(['user', 'aliases'])
+    editable_settings = frozenset(['user'])
 
     def __init__(self, user: str) -> None:
         self.user = user
