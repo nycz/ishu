@@ -630,7 +630,7 @@ def cmd_list(config: Config, args: List[str]) -> None:
          str(len(i.comments)),
          ', '.join(f'#{tag}' for tag in sorted(i.tags)),
          i.description)
-        for i in issues
+        for i in sorted(issues, key=lambda x: x.id_.num)
     ]
     try:
         for line in format_table(table, wrap_columns={-1, -2}, titles=titles,
