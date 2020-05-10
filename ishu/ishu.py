@@ -582,8 +582,12 @@ def cmd_list(config: Config, args: List[str]) -> None:
     issues: List[Issue] = []
     is_blocking = set()
     for issue in all_issues:
-        blocking_issues = [i for i in all_issues
-                           if i.id_ != issue.id_ and issue.id_ in i.blocked_by]
+        # Only see issues as blocking if they are open
+        if issue.status == IssueStatus.OPEN:
+            blocking_issues = [i for i in all_issues
+                               if i.id_ != issue.id_ and issue.id_ in i.blocked_by]
+        else:
+            blocking_issues = []
         if blocking_issues:
             is_blocking.add(issue.id_)
         if tags and not tags.issubset(issue.tags):
