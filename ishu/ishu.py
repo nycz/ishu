@@ -534,7 +534,9 @@ help_list = CommandHelp(
         OptionHelp(spec='-b/--blocked',
                    description='only show issues blocked by other issues'),
         OptionHelp(spec='-n/--no-blocks',
-                   description="don't show blocked or blocking issues")
+                   description="don't show blocked or blocking issues"),
+        OptionHelp(spec='-I/--no-icons',
+                   description="don't show any special icons"),
     ]
 )
 
@@ -547,6 +549,7 @@ def cmd_list(config: Config, args: List[str]) -> None:
     blocked = False
     blocking = False
     no_blocks = False
+    show_icons = True
 
     # Parse the arguments
     while args:
@@ -572,6 +575,8 @@ def cmd_list(config: Config, args: List[str]) -> None:
             blocking = True
         elif arg in {'-n', '--no-blocks'}:
             no_blocks = True
+        elif arg in {'-I', '--no-icons'}:
+            show_icons = False
         else:
             cli.arg_unknown_optional(arg)
     if no_blocks and (blocked or blocking):
@@ -616,13 +621,16 @@ def cmd_list(config: Config, args: List[str]) -> None:
     def _date_or_time_fmt(dt: datetime) -> str:
         return dt.strftime(time_fmt if dt > one_day_ago else date_fmt)
 
-    status_icon = {IssueStatus.FIXED: GREEN + '',
-                   IssueStatus.OPEN: CYAN + '',
-                   IssueStatus.CLOSED: GREEN + '',
-                   IssueStatus.WONTFIX: RED + ''}
+    status_icon = {
+        IssueStatus.FIXED: GREEN + ('' if show_icons else 'F'),
+        IssueStatus.OPEN: CYAN + ('' if show_icons else ' '),
+        IssueStatus.CLOSED: GREEN + ('' if show_icons else 'C'),
+        IssueStatus.WONTFIX: RED + ('' if show_icons else 'W'),
+    }
 
-    titles = ('ID', 'User', 'S', ' ', 'Created', 'Updated',
-              ' ', 'Tags', 'Description')
+    titles = ('ID', 'User', 'S', (' ' if show_icons else 'Blocks'),
+              'Created', 'Updated', (' ' if show_icons else 'Comments'),
+              'Tags', 'Description')
     table = [
         (str(i.id_.num),
          i.id_.user,
@@ -641,8 +649,10 @@ def cmd_list(config: Config, args: List[str]) -> None:
                                  require_min_widths=frozenset({(-1, 30)})):
             print(line)
     except cli.TooNarrowColumn:
-        shorter_titles = ('ID', 'S', ' ', 'Created', 'Updated',
-                          ' ', 'Tags', 'Description')
+        shorter_titles = ('ID', 'S', (' ' if show_icons else 'Blocks'),
+                          'Created', 'Updated',
+                          (' ' if show_icons else 'Cmnt'), 'Tags',
+                          'Description')
         shorter_table = [
             (i.id_.shorten(None),
              status_icon[i.status] + RESET,
