@@ -4,7 +4,7 @@ from datetime import datetime, timedelta, timezone
 from itertools import chain
 import json
 from operator import itemgetter
-from typing import Any, Callable, List, Optional, Set, Tuple
+from typing import Any, Callable, Iterable, List, Optional, Set, Tuple
 
 from dateutil.tz import gettz
 
@@ -520,7 +520,7 @@ def cmd_comment(config: Config, args: List[str]) -> None:
 
 help_list = CommandHelp(
     description='list all issues or ones matching certain filters',
-    usage='[-s <status>] [-t <tag>...] [-T <tag>] [-Bbn]',
+    usage='[-s <status>] [-t <tag>...] [-T <tag>] [-BbnID]',
     options=[
         OptionHelp(spec='-s/--status <status>',
                    description='only show issues with this status'),
@@ -540,6 +540,8 @@ help_list = CommandHelp(
                    description="don't show blocked or blocking issues"),
         OptionHelp(spec='-I/--no-icons',
                    description="don't show any special icons"),
+        OptionHelp(spec='-D/--no-dates',
+                   description="don't show the date columns"),
     ]
 )
 
@@ -553,6 +555,7 @@ def cmd_list(config: Config, args: List[str]) -> None:
     blocking = False
     no_blocks = False
     show_icons = True
+    show_dates = True
 
     # Parse the arguments
     while args:
@@ -580,6 +583,8 @@ def cmd_list(config: Config, args: List[str]) -> None:
             no_blocks = True
         elif arg in {'-I', '--no-icons'}:
             show_icons = False
+        elif arg in {'-D', '--no-dates'}:
+            show_dates = False
         else:
             cli.arg_unknown_optional(arg)
     if no_blocks and (blocked or blocking):
@@ -631,44 +636,72 @@ def cmd_list(config: Config, args: List[str]) -> None:
         IssueStatus.WONTFIX: RED + ('' if show_icons else 'W'),
     }
 
-    titles = ('ID', 'User', 'S', (' ' if show_icons else 'Blocks'),
-              'Created', 'Updated', (' ' if show_icons else 'Comments'),
-              'Tags', 'Description')
     tz = gettz()
-    table = [
-        (str(i.id_.num),
-         i.id_.user,
-         status_icon[i.status] + RESET,
-         (('b' if i.blocked_by else '')
-          + ('B' if i.id_ in is_blocking else '')),
-         i.created.astimezone(tz).strftime(datetime_fmt),
-         (i.updated.astimezone(tz).strftime(datetime_fmt) if i.updated > i.created else ''),
-         str(len(i.comments)),
-         ', '.join(f'#{tag}' for tag in sorted(i.tags)),
-         i.description)
-        for i in sorted(issues, key=lambda x: x.id_.num)
-    ]
+
+    def cull_empty(items: Iterable[Optional[str]]) -> Iterable[str]:
+        for item in items:
+            if item is not None:
+                yield item
+
+    def generate_row(i: Issue, short: bool = False) -> Tuple[str, ...]:
+        status = status_icon[i.status] + RESET
+        blocks = (('b' if i.blocked_by else '')
+                  + ('B' if i.id_ in is_blocking else ''))
+        comments = str(len(i.comments))
+        tags = ', '.join(f'#{tag}' for tag in sorted(i.tags))
+        row: List[Optional[str]]
+        if short:
+            created = _date_or_time_fmt(i.created.astimezone(tz))
+            updated = (_date_or_time_fmt(i.updated.astimezone(tz))
+                       if i.updated > i.created else '')
+            row = [
+                i.id_.shorten(None),
+                status,
+                blocks,
+                created if show_dates else None,
+                updated if show_dates else None,
+                comments,
+                tags,
+                i.description,
+            ]
+        else:
+            created = i.created.astimezone(tz).strftime(datetime_fmt)
+            updated = (i.updated.astimezone(tz).strftime(datetime_fmt)
+                       if i.updated > i.created else '')
+            row = [
+                str(i.id_.num),
+                i.id_.user,
+                status,
+                blocks,
+                created if show_dates else None,
+                updated if show_dates else None,
+                comments,
+                tags,
+                i.description,
+            ]
+        return tuple(cull_empty(row))
+
+    titles = tuple(cull_empty([
+        'ID', 'User', 'S', (' ' if show_icons else 'Blocks'),
+        ('Created' if show_dates else None),
+        ('Updated' if show_dates else None),
+        (' ' if show_icons else 'Comments'),
+        'Tags', 'Description'
+    ]))
+    table = [generate_row(i) for i in sorted(issues, key=lambda x: x.id_.num)]
     try:
         for line in format_table(table, wrap_columns={-1, -2}, titles=titles,
                                  require_min_widths=frozenset({(-1, 30)})):
             print(line)
     except cli.TooNarrowColumn:
-        shorter_titles = ('ID', 'S', (' ' if show_icons else 'Blocks'),
-                          'Created', 'Updated',
-                          (' ' if show_icons else 'Cmnt'), 'Tags',
-                          'Description')
-        shorter_table = [
-            (i.id_.shorten(None),
-             status_icon[i.status] + RESET,
-             (('b' if i.blocked_by else '')
-              + ('B' if i.id_ in is_blocking else '')),
-             _date_or_time_fmt(i.created.astimezone(tz)),
-             (_date_or_time_fmt(i.updated.astimezone(tz)) if i.updated > i.created else ''),
-             str(len(i.comments)),
-             ', '.join(f'#{tag}' for tag in sorted(i.tags)),
-             i.description)
-            for i in issues
-        ]
+        shorter_titles = tuple(cull_empty([
+            'ID', 'S', (' ' if show_icons else 'Blocks'),
+            ('Created' if show_dates else None),
+            ('Updated' if show_dates else None),
+            (' ' if show_icons else 'Cmnt'), 'Tags',
+            'Description'
+        ]))
+        shorter_table = [generate_row(i, short=True) for i in issues]
         for line in format_table(shorter_table, wrap_columns={-1, -2},
                                  titles=shorter_titles):
             print(line)
