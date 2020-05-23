@@ -1,10 +1,12 @@
 #!/usr/bin/env python3
 from collections import Counter
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from itertools import chain
 import json
 from operator import itemgetter
 from typing import Any, Callable, List, Optional, Set, Tuple
+
+from dateutil.tz import gettz
 
 from libwui import cli
 from libwui.cli import (CommandDef, CommandHelp, error, format_table,
@@ -268,7 +270,7 @@ def cmd_open(config: Config, args: List[str]) -> None:
     # Run command
     issues = load_issues(user=config.user)
     new_id_num = max(chain((i.id_.num for i in issues), [0]))
-    now = datetime.utcnow()
+    now = datetime.now(timezone.utc)
     issue = Issue(id_=IssueID(num=new_id_num + 1, user=config.user),
                   created=now,
                   updated=now,
@@ -352,7 +354,8 @@ def _change_status(user: str, issue_id: IssueID,
     else:
         issue._replace(status=target_status).save()
         if comment_text:
-            Comment(issue_id=issue_id, user=user, created=datetime.now(),
+            Comment(issue_id=issue_id, user=user,
+                    created=datetime.now(timezone.utc),
                     message=comment_text).save()
         print(f'Issue {issue_id.num} {result_text}')
 
@@ -509,7 +512,7 @@ def cmd_comment(config: Config, args: List[str]) -> None:
     # Run command
     comment = Comment(issue_id=issue_id,
                       user=config.user,
-                      created=datetime.now(),
+                      created=datetime.now(timezone.utc),
                       message=message)
     comment.save()
     print('Comment added')
@@ -616,7 +619,7 @@ def cmd_list(config: Config, args: List[str]) -> None:
     date_fmt = '%Y-%m-%d'
     time_fmt = '%H:%M'
     datetime_fmt = f'{date_fmt} {time_fmt}'
-    one_day_ago = datetime.now() - timedelta(days=1)
+    one_day_ago = datetime.now(timezone.utc) - timedelta(days=1)
 
     def _date_or_time_fmt(dt: datetime) -> str:
         return dt.strftime(time_fmt if dt > one_day_ago else date_fmt)
@@ -631,14 +634,15 @@ def cmd_list(config: Config, args: List[str]) -> None:
     titles = ('ID', 'User', 'S', (' ' if show_icons else 'Blocks'),
               'Created', 'Updated', (' ' if show_icons else 'Comments'),
               'Tags', 'Description')
+    tz = gettz()
     table = [
         (str(i.id_.num),
          i.id_.user,
          status_icon[i.status] + RESET,
          (('b' if i.blocked_by else '')
           + ('B' if i.id_ in is_blocking else '')),
-         i.created.strftime(datetime_fmt),
-         (i.updated.strftime(datetime_fmt) if i.updated > i.created else ''),
+         i.created.astimezone(tz).strftime(datetime_fmt),
+         (i.updated.astimezone(tz).strftime(datetime_fmt) if i.updated > i.created else ''),
          str(len(i.comments)),
          ', '.join(f'#{tag}' for tag in sorted(i.tags)),
          i.description)
@@ -658,8 +662,8 @@ def cmd_list(config: Config, args: List[str]) -> None:
              status_icon[i.status] + RESET,
              (('b' if i.blocked_by else '')
               + ('B' if i.id_ in is_blocking else '')),
-             _date_or_time_fmt(i.created),
-             (_date_or_time_fmt(i.updated) if i.updated > i.created else ''),
+             _date_or_time_fmt(i.created.astimezone(tz)),
+             (_date_or_time_fmt(i.updated.astimezone(tz)) if i.updated > i.created else ''),
              str(len(i.comments)),
              ', '.join(f'#{tag}' for tag in sorted(i.tags)),
              i.description)

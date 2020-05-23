@@ -1,4 +1,4 @@
-from datetime import datetime
+from datetime import datetime, timezone
 import enum
 import json
 from pathlib import Path
@@ -78,10 +78,15 @@ class Comment(NamedTuple):
     @classmethod
     def load(cls, file_path: Path) -> 'Comment':
         data: Dict[str, Any] = json.loads(file_path.read_text())
+        # The old date doesn't play nice with strptime so convert it
+        # to the new one when needed
+        raw_created = data['created']
+        if raw_created.endswith('Z'):
+            raw_created = raw_created[:-1] + '+0000'
         return cls(issue_id=IssueID(user=data['issue_id']['user'],
                                     num=data['issue_id']['num']),
                    user=data['user'],
-                   created=datetime.strptime(data['created'], TIMESTAMP_FMT),
+                   created=datetime.strptime(raw_created, TIMESTAMP_FMT),
                    message=data['message'])
 
     def save(self) -> None:
@@ -167,9 +172,18 @@ class Issue(NamedTuple):
                           key=lambda x: x.created)
         blocked_by = {IssueID(num=i['id'], user=i['user'])
                       for i in data['blocked_by']}
+        # The old date doesn't play nice with strptime so convert it
+        # to the new one when needed
+        raw_created = data['created']
+        if raw_created.endswith('Z'):
+            raw_created = raw_created[:-1] + '+0000'
+        raw_updated = data['updated']
+        if raw_updated.endswith('Z'):
+            raw_updated = raw_updated[:-1] + '+0000'
+
         return cls(id_=IssueID(num=data['id'], user=data['user']),
-                   created=datetime.strptime(data['created'], TIMESTAMP_FMT),
-                   updated=datetime.strptime(data['updated'], TIMESTAMP_FMT),
+                   created=datetime.strptime(raw_created, TIMESTAMP_FMT),
+                   updated=datetime.strptime(raw_updated, TIMESTAMP_FMT),
                    description=data['description'],
                    tags=set(data['tags']),
                    blocked_by=blocked_by,
@@ -187,7 +201,7 @@ class Issue(NamedTuple):
                           ) -> List[Dict[str, Any]]:
             return sorted(({'id': b.num, 'user': b.user} for b in blocks),
                           key=lambda x: x['id'])
-        now = datetime.now().strftime(TIMESTAMP_FMT)
+        now = datetime.now(timezone.utc).strftime(TIMESTAMP_FMT)
         log_diff: Dict[str, Any] = {}
         if self.description != self.original_description:
             log_diff['description'] = self.original_description

@@ -19,7 +19,7 @@ ROOT_OVERRIDE, ROOT = _get_root()
 # Don't call this 'tags' to avoid conflicts with ctags
 TAGS_PATH = ROOT / 'registered_tags'
 ISSUE_FNAME = 'issue'
-TIMESTAMP_FMT = '%Y-%m-%dT%H:%M:%SZ'
+TIMESTAMP_FMT = '%Y-%m-%dT%H:%M:%S%z'
 CONFIG_PATH = Path.home() / '.config' / 'ishu.conf'
 
 
