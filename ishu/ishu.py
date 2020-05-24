@@ -4,6 +4,7 @@ from datetime import datetime, timedelta, timezone
 from itertools import chain
 import json
 from operator import itemgetter
+import os
 from typing import Any, Callable, Iterable, List, Optional, Set, Tuple
 
 from dateutil.tz import gettz
@@ -539,7 +540,8 @@ help_list = CommandHelp(
         OptionHelp(spec='-n/--no-blocks',
                    description="don't show blocked or blocking issues"),
         OptionHelp(spec='-I/--no-icons',
-                   description="don't show any special icons"),
+                   description="don't show any special icons "
+                               "(also set with ISHU_NO_ICONS envvar)"),
         OptionHelp(spec='-D/--no-dates',
                    description="don't show the date columns"),
     ]
@@ -554,7 +556,7 @@ def cmd_list(config: Config, args: List[str]) -> None:
     blocked = False
     blocking = False
     no_blocks = False
-    show_icons = True
+    show_icons = not bool(os.environ.get('ISHU_NO_ICONS'))
     show_dates = True
 
     # Parse the arguments
