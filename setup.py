@@ -6,7 +6,7 @@ setup(
     url='https://github.com/nycz/ishu',
     author='nycz',
     packages=find_packages(),
-    install_requires=['dateutil'],
+#    install_requires=['dateutil'],
     entry_points={
         'console_scripts': [
             'ishu=ishu.ishu:main'

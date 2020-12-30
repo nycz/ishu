@@ -8,3 +8,10 @@ Usage
 -----
 Use the ISHUROOT environment variable to use a different root directory
 than the current working directory.
+
+Alias
+-----
+Any command may be used in an alias.
+Example:
+ishu a -s my_alias "ls -s open -T tag1 tag2"
+ishu @my_alias
