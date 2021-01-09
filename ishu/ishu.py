@@ -521,7 +521,7 @@ def cmd_comment(config: Config, args: List[str]) -> None:
 
 help_list = CommandHelp(
     description='list all issues or ones matching certain filters',
-    usage='[-s <status>] [-t <tag>...] [-T <tag>] [-BbnID]',
+    usage='[-s <status>] [-t <tag>...] [-T <tag>] [-BbnIDl]',
     options=[
         OptionHelp(spec='-s/--status <status>',
                    description='only show issues with this status'),
@@ -544,6 +544,8 @@ help_list = CommandHelp(
                                "(also set with ISHU_NO_ICONS envvar)"),
         OptionHelp(spec='-D/--no-dates',
                    description="don't show the date columns"),
+        OptionHelp(spec='-l/--list-abc',
+                   description="list issues alphabetically"),
     ]
 )
 
@@ -558,6 +560,7 @@ def cmd_list(config: Config, args: List[str]) -> None:
     no_blocks = False
     show_icons = not bool(os.environ.get('ISHU_NO_ICONS'))
     show_dates = True
+    list_abc = False
 
     # Parse the arguments
     while args:
@@ -587,6 +590,8 @@ def cmd_list(config: Config, args: List[str]) -> None:
             show_icons = False
         elif arg in {'-D', '--no-dates'}:
             show_dates = False
+        elif arg in {'-l', '--list-abc'}:
+            list_abc = True
         else:
             cli.arg_unknown_optional(arg)
     if no_blocks and (blocked or blocking):
@@ -690,7 +695,14 @@ def cmd_list(config: Config, args: List[str]) -> None:
         (' ' if show_icons else 'Comments'),
         'Tags', 'Description'
     ]))
-    table = [generate_row(i) for i in sorted(issues, key=lambda x: x.id_.num)]
+
+    def sorter(issue: Issue):
+        if list_abc:
+            return issue.description
+        else:
+            return issue.id_.num
+
+    table = [generate_row(i) for i in sorted(issues, key=sorter)]
     try:
         for line in format_table(table, wrap_columns={-1, -2}, titles=titles,
                                  require_min_widths=frozenset({(-1, 30)})):
@@ -703,7 +715,7 @@ def cmd_list(config: Config, args: List[str]) -> None:
             (' ' if show_icons else 'Cmnt'), 'Tags',
             'Description'
         ]))
-        shorter_table = [generate_row(i, short=True) for i in issues]
+        shorter_table = [generate_row(i, short=True) for i in sorted(issues, key=sorter)]
         for line in format_table(shorter_table, wrap_columns={-1, -2},
                                  titles=shorter_titles):
             print(line)
